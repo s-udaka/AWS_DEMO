@@ -385,3 +385,9 @@ sudo yum install gcc
 source myenv/bin/activate
 pip install psycopg2
 ```
+15. テストアプリのソースコードを変更したらgunicornを再起動する必要あり
+```
+sudo systemctl restart gunicorn
+sudo systemctl status gunicorn
+```
+16. ブラウザからEC2インスタンスのパブリックIPにアクセスして、テストアプリが正しく動作すればOK
