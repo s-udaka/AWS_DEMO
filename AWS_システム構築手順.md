@@ -112,3 +112,123 @@ sudo systemctl enable nginx
 systemctl is-enabled nginx
 ```
 5. ブラウザのアドレスバーにEC2インスタンスのパブリックIPを入力し、nginxのデフォルト画面が表示されればwebサーバの構築完了です。
+
+## 3.webサーバにdjango環境構築
+#### 上記で作成したwebサーバにSSHログインし、下記手順にそってセットアップしていきます。
+1. パッケージインデックスを更新し、Python 3 がホストにすでにインストールされているかどうかを確認します。
+```
+yum check-update
+yum list installed | grep -i python3
+```
+2. Amazon Linux 2 に Python 3 をインストールする（Python 3 がまだインストールされていない場合）
+```
+sudo yum install python3 -y
+```
+3. ec2-user ホームディレクトリの下に仮想環境を作成する
+```
+python3 -m venv myenv
+```
+4. Python3の仮想環境を有効化
+```
+source myenv/bin/activate
+```
+5. 仮想環境内に最新の pip モジュールがインストールされていることを確認してから、必要なモジュールをインストール
+```
+pip install pip --upgrade
+pip install django gunicorn
+```
+6. 仮想環境から一旦抜ける
+```
+deactivate
+```
+7. ログイン時に仮想環境を自動的にアクティブ化するため、~/.bashrc ファイルに追記します。
+```
+echo "source ${HOME}/myenv/bin/activate" >> ${HOME}/.bashrc
+```
+8. ホームディレクトリの ~/.bashrc ファイルをソースして、環境の bash 環境をリロードします。リロードすると、仮想環境が自動的にアクティブになります。
+```
+source ~/.bashrc
+```
+9. テストアプリをgitからcloneしてくる
+```
+sudo yum update -y
+sudo yum install git -y
+git clone https://github.com/~
+```
+10. テストアプリの最新版を取得する
+```
+git pull
+git checkout -b develop origin/develop
+git branch
+```
+11. 仮想環境から抜ける
+```
+deactivate
+```
+## 4.Gunicornの設定
+#### GunicornとはRubyで利用されるAPサーバのUnicornをもとにして作られたPython向けのAPサーバです。
+1. Gunicornのserviceファイルを編集(作成)します。
+```
+sudo vim /etc/systemd/system/gunicorn.service
+```
+2. おそらくファイルが存在していないので、以下を貼り付けてください。
+```
+[Unit]
+Description=gunicorn daemon
+After=network.target
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/aws_django_test/test_django
+ExecStart=/home/ec2-user/myenv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/home/ec2-user/aws_django_test/test_django.sock test_django.wsgi:application
+
+[Install]
+WantedBy=multi-user.target
+```
+3. Gunicorn serviceの自動起動を設定します。
+```
+sudo systemctl start gunicorn.service
+sudo systemctl enable gunicorn
+```
+## 5.Nginxの設定
+1. Nginxの設定ファイルを作成します
+```
+sudo vim /etc/nginx/conf.d/aws_django_test.conf
+```
+2. 設定ファイルの内容は以下の通り（server_nameはEC2のパブリックIP）
+```
+server {
+        listen 80;
+        server_name EC2のパブリックIP;
+
+        location = /favicon.ico {access_log off; log_not_found off;}
+        location /static/ {
+                root /home/ec2-user/aws_django_test;
+        }
+
+        location / {
+                proxy_set_header Host $http_host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_pass http://unix:/home/ec2-user/aws_django_test/test_django.sock;
+        }
+}
+```
+3. nginx.confの内容を一部変更する（実行ユーザーを変更する）
+```
+# user nginx;
+user ec2-user;
+
+```
+4. Nginxをリスタートして設定を反映させる
+```
+sudo systemctl restart nginx
+sudo systemctl status nginx
+```
+5. 最後にGunirornをリスタートしておきましょう。
+```
+sudo systemctl restart gunicorn
+```
+6. ブラウザからEC2インスタンスのパブリックIPにアクセスして、テストアプリが表示されればOK
